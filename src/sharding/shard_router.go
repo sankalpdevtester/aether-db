@@ -4,65 +4,60 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http"
 
-	"github.com/AetherDB/aetherdb/src/network/rpc"
-	"github.com/AetherDB/aetherdb/src/sharding/shard_manager"
+	"github.com/AetherDB/AetherDB/src/network/rpc"
+	"github.com/AetherDB/AetherDB/src/raft/consensus"
 )
 
-// ShardRouter is responsible for routing requests to the correct shard.
+// ShardRouter is responsible for routing requests to the correct shard
 type ShardRouter struct {
-	shardManager *shard_manager.ShardManager
-	rpcSvc       *rpc.RPCService
+	shardManager *ShardManager
+	consensus    *consensus.Consensus
+	rpcServer    *rpc.RPCServer
 }
 
-// NewShardRouter returns a new instance of ShardRouter.
-func NewShardRouter(shardManager *shard_manager.ShardManager, rpcSvc *rpc.RPCService) *ShardRouter {
+// NewShardRouter returns a new instance of ShardRouter
+func NewShardRouter(shardManager *ShardManager, consensus *consensus.Consensus, rpcServer *rpc.RPCServer) *ShardRouter {
 	return &ShardRouter{
 		shardManager: shardManager,
-		rpcSvc:       rpcSvc,
+		consensus:    consensus,
+		rpcServer:    rpcServer,
 	}
 }
 
-// Route routes a request to the correct shard.
-func (sr *ShardRouter) Route(ctx context.Context, req *http.Request) (*http.Response, error) {
-	shardID := sr.getShardID(req)
+// RouteRequest routes a request to the correct shard
+func (sr *ShardRouter) RouteRequest(ctx context.Context, request *rpc.Request) (*rpc.Response, error) {
+	shardID := request.ShardID
+
 	shard := sr.shardManager.GetShard(shardID)
+
 	if shard == nil {
 		return nil, fmt.Errorf("shard not found")
 	}
-	leader := shard.Leader
-	if leader == nil {
-		return nil, fmt.Errorf("leader not found")
+
+	for _, node := range shard.Nodes {
+		if err := node.RouteRequest(ctx, request); err != nil {
+			return nil, err
+		}
 	}
-	endpoint := leader.Endpoint
-	resp, err := sr.rpcSvc.Call(ctx, endpoint, req)
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
+
+	return &rpc.Response{}, nil
 }
 
-// getShardID returns the shard ID for a given request.
-func (sr *ShardRouter) getShardID(req *http.Request) uint64 {
-	// For demonstration purposes, assume the shard ID is in the request header.
-	shardIDStr := req.Header.Get("X-Shard-ID")
-	shardID, err := strconv.ParseUint(shardIDStr, 10, 64)
-	if err != nil {
-		log.Printf("error parsing shard ID: %v", err)
-		return 0
+// Start starts the shard router
+func (sr *ShardRouter) Start(ctx context.Context) error {
+	if err := sr.rpcServer.Start(ctx); err != nil {
+		return err
 	}
-	return shardID
+
+	return nil
 }
 
-// Start starts the shard router.
-func (sr *ShardRouter) Start(ctx context.Context) {
-	log.Println("Shard router started")
-	sr.rpcSvc.Start(ctx)
-}
+// Stop stops the shard router
+func (sr *ShardRouter) Stop(ctx context.Context) error {
+	if err := sr.rpcServer.Stop(ctx); err != nil {
+		return err
+	}
 
-// Stop stops the shard router.
-func (sr *ShardRouter) Stop(ctx context.Context) {
-	log.Println("Shard router stopped")
-	sr.rpcSvc.Stop(ctx)
+	return nil
 }
