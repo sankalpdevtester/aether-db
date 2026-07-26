@@ -10,10 +10,8 @@ import (
 
 // CacheConfig represents the configuration for the in-memory cache.
 type CacheConfig struct {
-	// DefaultTTL is the default time-to-live for cache entries.
 	DefaultTTL time.Duration
-	// MaxSize is the maximum number of entries in the cache.
-	MaxSize int
+	MaxSize    int
 }
 
 // Cache is an in-memory cache with TTL for database query results.
@@ -22,7 +20,7 @@ type Cache struct {
 	mu    sync.RWMutex
 }
 
-// NewCache returns a new instance of the cache.
+// NewCache returns a new instance of the Cache.
 func NewCache(config CacheConfig) *Cache {
 	c := cache.New(5*time.Minute, 10*time.Minute)
 	return &Cache{
@@ -51,32 +49,47 @@ func (c *Cache) Delete(key string) {
 	c.cache.Delete(key)
 }
 
-// Invalidate invalidates all cache entries.
-func (c *Cache) Invalidate() {
+// Flush removes all values from the cache.
+func (c *Cache) Flush() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.cache.Flush()
+}
+
+// GetOrSet returns the value associated with the given key from the cache.
+// If the key is not present in the cache, it sets the value and returns it.
+func (c *Cache) GetOrSet(key string, value interface{}, ttl time.Duration) interface{} {
+	c.mu.RLock()
+	val, found := c.cache.Get(key)
+	c.mu.RUnlock()
+	if found {
+		return val
+	}
+	c.mu.Lock()
+	c.cache.Set(key, value, ttl)
+	c.mu.Unlock()
+	return value
 }
 
 // Example usage:
 func main() {
 	cache := NewCache(CacheConfig{
 		DefaultTTL: 1 * time.Hour,
-		MaxSize:    1000,
+		MaxSize:     1000,
 	})
 
 	// Set a value in the cache
 	cache.Set("key", "value", 1*time.Hour)
 
 	// Get a value from the cache
-	value, found := cache.Get("key")
+	val, found := cache.Get("key")
 	if found {
-		println(value.(string)) // prints "value"
+		println(val.(string)) // Output: value
 	}
 
 	// Delete a value from the cache
 	cache.Delete("key")
 
-	// Invalidate all cache entries
-	cache.Invalidate()
+	// Flush the cache
+	cache.Flush()
 }
