@@ -1,95 +1,85 @@
-// Package utils provides utility functions for the AetherDB project.
+// Package utils provides utility functions for AetherDB.
 package utils
 
 import (
 	"sync"
 	"time"
 
-	"github.com/patrickmn/go-cache"
+	"github.com/AetherDB/aetherdb/src/feature/data_compression"
+	"github.com/AetherDB/aetherdb/src/sharding"
 )
 
 // CacheConfig represents the configuration for the in-memory cache.
 type CacheConfig struct {
-	DefaultTTL time.Duration
-	MaxSize    int
+	TTL time.Duration // Time to live for cache entries
 }
 
 // Cache is an in-memory cache with TTL for database query results.
 type Cache struct {
-	cache *cache.Cache
-	mu    sync.RWMutex
+	config CacheConfig
+	cache  map[string][]byte
+	mu     sync.RWMutex
 }
 
-// NewCache returns a new instance of the Cache.
+// NewCache returns a new instance of the cache.
 func NewCache(config CacheConfig) *Cache {
-	c := cache.New(5*time.Minute, 10*time.Minute)
 	return &Cache{
-		cache: c,
+		config: config,
+		cache:  make(map[string][]byte),
 	}
 }
 
-// Get returns the value associated with the given key from the cache.
-func (c *Cache) Get(key string) (interface{}, bool) {
+// Get returns the cached result for the given key.
+func (c *Cache) Get(key string) ([]byte, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.cache.Get(key)
+
+	value, ok := c.cache[key]
+	if !ok {
+		return nil, false
+	}
+
+	// Check if the cache entry has expired
+	if time.Since(time.Now()) > c.config.TTL {
+		delete(c.cache, key)
+		return nil, false
+	}
+
+	return value, true
 }
 
-// Set sets the value associated with the given key in the cache.
-func (c *Cache) Set(key string, value interface{}, ttl time.Duration) {
+// Set sets the cached result for the given key.
+func (c *Cache) Set(key string, value []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.cache.Set(key, value, ttl)
+
+	// Compress the value before caching
+	compressedValue, err := data_compression.Compress(value)
+	if err != nil {
+		// Log the error and return
+		return
+	}
+
+	c.cache[key] = compressedValue
 }
 
-// Delete removes the value associated with the given key from the cache.
+// Delete deletes the cached result for the given key.
 func (c *Cache) Delete(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.cache.Delete(key)
+
+	delete(c.cache, key)
 }
 
-// Flush removes all values from the cache.
-func (c *Cache) Flush() {
+// InvalidateShardCache invalidates the cache for a given shard.
+func (c *Cache) InvalidateShardCache(shardID uint64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.cache.Flush()
-}
 
-// GetOrSet returns the value associated with the given key from the cache.
-// If the key is not present in the cache, it sets the value and returns it.
-func (c *Cache) GetOrSet(key string, value interface{}, ttl time.Duration) interface{} {
-	c.mu.RLock()
-	val, found := c.cache.Get(key)
-	c.mu.RUnlock()
-	if found {
-		return val
+	// Find all cache entries for the given shard and delete them
+	for key := range c.cache {
+		if sharding.ShardRouter.GetShardID(key) == shardID {
+			delete(c.cache, key)
+		}
 	}
-	c.mu.Lock()
-	c.cache.Set(key, value, ttl)
-	c.mu.Unlock()
-	return value
-}
-
-// Example usage:
-func main() {
-	cache := NewCache(CacheConfig{
-		DefaultTTL: 1 * time.Hour,
-		MaxSize:     1000,
-	})
-
-	// Set a value in the cache
-	cache.Set("key", "value", 1*time.Hour)
-
-	// Get a value from the cache
-	val, found := cache.Get("key")
-	if found {
-		println(val.(string)) // Output: value
-	}
-
-	// Delete a value from the cache
-	cache.Delete("key")
-
-	// Flush the cache
-	cache.Flush()
 }
