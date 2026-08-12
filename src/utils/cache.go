@@ -1,4 +1,4 @@
-// Package utils provides utility functions for the AetherDB project.
+// Package utils provides utility functions for AetherDB.
 package utils
 
 import (
@@ -22,7 +22,7 @@ type Cache struct {
 	mu    sync.RWMutex
 }
 
-// NewCache returns a new instance of the in-memory cache.
+// NewCache returns a new instance of the cache.
 func NewCache(config CacheConfig) *Cache {
 	c := cache.New(5*time.Minute, 10*time.Minute)
 	return &Cache{
@@ -30,28 +30,28 @@ func NewCache(config CacheConfig) *Cache {
 	}
 }
 
-// Get returns the value associated with the given key from the cache.
+// Get returns the value associated with the given key.
 func (c *Cache) Get(key string) (interface{}, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.cache.Get(key)
 }
 
-// Set sets the value associated with the given key in the cache.
-func (c *Cache) Set(key string, value interface{}) {
+// Set sets the value for the given key with the specified TTL.
+func (c *Cache) Set(key string, value interface{}, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.cache.Set(key, value, cache.DefaultExpiration)
+	c.cache.Set(key, value, ttl)
 }
 
-// Delete removes the entry associated with the given key from the cache.
+// Delete removes the entry with the given key from the cache.
 func (c *Cache) Delete(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.cache.Delete(key)
 }
 
-// Invalidate invalidates all entries in the cache.
+// Invalidate invalidates all cache entries.
 func (c *Cache) Invalidate() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -59,32 +59,24 @@ func (c *Cache) Invalidate() {
 }
 
 // Example usage:
-func main() {
+func ExampleCacheUsage() {
 	cache := NewCache(CacheConfig{
-		DefaultTTL: 1 * time.Hour,
-		MaxSize:     1000,
+		DefaultTTL: 1 * time.Minute,
+		MaxSize:      1000,
 	})
 
-	// Set a value in the cache
-	cache.Set("key", "value")
+	// Set a value with a TTL of 1 minute
+	cache.Set("key", "value", 1*time.Minute)
 
-	// Get a value from the cache
+	// Get the value
 	value, found := cache.Get("key")
 	if found {
-		println(value.(string)) // prints: value
+		println(value.(string)) // Output: value
 	}
 
-	// Delete a value from the cache
+	// Delete the entry
 	cache.Delete("key")
 
-	// Invalidate all entries in the cache
+	// Invalidate all cache entries
 	cache.Invalidate()
 }
-``` 
-// Integration with existing files:
-// The cache can be used in the src/feature/data_compression.go file to cache compressed data.
-// The cache can be used in the src/feature/time_series_index.go file to cache time series data.
-// The cache can be used in the src/feature/secondary_index.go file to cache secondary index data.
-// The cache can be used in the src/sharding/shard_manager.go file to cache shard metadata.
-// The cache can be used in the src/sharding/shard_replicator.go file to cache replicated data.
-// The cache can be used in the src/sharding/shard_router.go file to cache routing information.
