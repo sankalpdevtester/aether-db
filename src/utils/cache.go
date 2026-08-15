@@ -1,4 +1,4 @@
-// Package utils provides utility functions for AetherDB.
+// Package utils provides utility functions for the AetherDB project.
 package utils
 
 import (
@@ -10,10 +10,7 @@ import (
 
 // CacheConfig represents the configuration for the in-memory cache.
 type CacheConfig struct {
-	// DefaultTTL is the default time-to-live for cache entries.
 	DefaultTTL time.Duration
-	// MaxSize is the maximum number of entries in the cache.
-	MaxSize int
 }
 
 // Cache is an in-memory cache with TTL for database query results.
@@ -22,29 +19,28 @@ type Cache struct {
 	mu    sync.RWMutex
 }
 
-// NewCache returns a new instance of the cache.
+// NewCache returns a new instance of the Cache.
 func NewCache(config CacheConfig) *Cache {
-	c := cache.New(5*time.Minute, 10*time.Minute)
 	return &Cache{
-		cache: c,
+		cache: cache.New(5*time.Minute, 10*time.Minute),
 	}
 }
 
-// Get returns the value associated with the given key.
+// Get returns the value associated with the given key from the cache.
 func (c *Cache) Get(key string) (interface{}, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.cache.Get(key)
 }
 
-// Set sets the value for the given key with the specified TTL.
+// Set sets the value associated with the given key in the cache.
 func (c *Cache) Set(key string, value interface{}, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.cache.Set(key, value, ttl)
 }
 
-// Delete removes the entry with the given key from the cache.
+// Delete removes the value associated with the given key from the cache.
 func (c *Cache) Delete(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -58,24 +54,35 @@ func (c *Cache) Invalidate() {
 	c.cache.Flush()
 }
 
+// GetCache returns the underlying cache instance.
+func (c *Cache) GetCache() *cache.Cache {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.cache
+}
+
+// cacheKey generates a cache key based on the given parameters.
+func cacheKey(shardID string, key string) string {
+	return shardID + ":" + key
+}
+
 // Example usage:
-func ExampleCacheUsage() {
+func main() {
 	cache := NewCache(CacheConfig{
 		DefaultTTL: 1 * time.Minute,
-		MaxSize:      1000,
 	})
 
-	// Set a value with a TTL of 1 minute
-	cache.Set("key", "value", 1*time.Minute)
+	// Set a value in the cache
+	cache.Set("shard1:mykey", "myvalue", 30*time.Second)
 
-	// Get the value
-	value, found := cache.Get("key")
+	// Get a value from the cache
+	value, found := cache.Get("shard1:mykey")
 	if found {
-		println(value.(string)) // Output: value
+		println(value.(string)) // prints "myvalue"
 	}
 
-	// Delete the entry
-	cache.Delete("key")
+	// Delete a value from the cache
+	cache.Delete("shard1:mykey")
 
 	// Invalidate all cache entries
 	cache.Invalidate()
